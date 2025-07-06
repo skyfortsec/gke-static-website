@@ -41,4 +41,5 @@ jobs:
             -var="project_id=${{ vars.GCP_PROJECT }}" \
             -var="region=${{ vars.GKE_REGION }}" \
             -var="zone=${{ vars.GCP_ZONE }}" \
+            #deploy
             -var="cluster_name=${{ vars.GKE_CLUSTER_NAME }}"
