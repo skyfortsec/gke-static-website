@@ -43,3 +43,4 @@ jobs:
             -var="zone=${{ vars.GCP_ZONE }}" \
             #deploy
             -var="cluster_name=${{ vars.GKE_CLUSTER_NAME }}"
+            #new
