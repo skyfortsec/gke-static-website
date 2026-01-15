@@ -10,20 +10,39 @@ jobs:
     name: Terraform Deploy to GKE
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Set up Google Cloud SDK
-        uses: google-github-actions/setup-gcloud@v1
-        with:
-          project_id: ${{ vars.GCP_PROJECT }}
-          install_components: 'gke-gcloud-auth-plugin'
-
+      # 1) Authenticate FIRST (so all later gcloud/terraform calls use this identity)
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v1
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      # 2) Setup gcloud AFTER auth
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          project_id: ${{ vars.GCP_PROJECT }}
+          install_components: gke-gcloud-auth-plugin
+
+      # 3) Confirm which identity + project is actually being used (super helpful for 403 debugging)
+      - name: Verify identity and project
+        run: |
+          gcloud auth list
+          gcloud config set project "${{ vars.GCP_PROJECT }}"
+          gcloud config list project
+          gcloud projects describe "${{ vars.GCP_PROJECT }}" --format="value(projectId)"
+
+      # (Optional but recommended) Ensure required APIs are enabled
+      # If this fails due to permissions, grant: roles/serviceusage.serviceUsageAdmin to the same SA.
+      - name: Enable required APIs (optional)
+        run: |
+          gcloud services enable container.googleapis.com compute.googleapis.com iam.googleapis.com --project "${{ vars.GCP_PROJECT }}"
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
@@ -34,6 +53,19 @@ jobs:
         working-directory: ./terraform
         run: terraform init
 
+      - name: Terraform Validate
+        working-directory: ./terraform
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: ./terraform
+        run: |
+          terraform plan \
+            -var="project_id=${{ vars.GCP_PROJECT }}" \
+            -var="region=${{ vars.GKE_REGION }}" \
+            -var="zone=${{ vars.GCP_ZONE }}" \
+            -var="cluster_name=${{ vars.GKE_CLUSTER_NAME }}"
+
       - name: Terraform Apply
         working-directory: ./terraform
         run: |
@@ -41,6 +73,5 @@ jobs:
             -var="project_id=${{ vars.GCP_PROJECT }}" \
             -var="region=${{ vars.GKE_REGION }}" \
             -var="zone=${{ vars.GCP_ZONE }}" \
-            #deploy
             -var="cluster_name=${{ vars.GKE_CLUSTER_NAME }}"
-            #new
+
