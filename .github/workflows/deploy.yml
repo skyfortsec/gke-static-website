@@ -10,11 +10,14 @@ jobs:
     name: Terraform Deploy to GKE
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Auth FIRST so gcloud/terraform use the right identity
+      # Authenticate FIRST so all later gcloud/terraform calls use this identity
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v1
         with:
@@ -26,12 +29,26 @@ jobs:
           project_id: ${{ vars.GCP_PROJECT }}
           install_components: gke-gcloud-auth-plugin
 
-      # Optional but very useful for troubleshooting (keep it for now)
+      # Verify identity + ensure project ID is clean (trim whitespace defensively)
       - name: Verify identity and project
         run: |
+          PROJECT_ID="$(echo '${{ vars.GCP_PROJECT }}' | xargs)"
+          echo "Using PROJECT_ID=${PROJECT_ID}"
+
           gcloud auth list
-          gcloud config set project "${{ vars.GCP_PROJECT }}"
+          gcloud config set project "${PROJECT_ID}"
           gcloud config list project
+
+      # Optional: enable required APIs (uncomment if needed)
+      # - name: Enable required APIs
+      #   run: |
+      #     PROJECT_ID="$(echo '${{ vars.GCP_PROJECT }}' | xargs)"
+      #     gcloud services enable \
+      #       cloudresourcemanager.googleapis.com \
+      #       container.googleapis.com \
+      #       compute.googleapis.com \
+      #       iam.googleapis.com \
+      #       --project "${PROJECT_ID}"
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
@@ -42,11 +59,34 @@ jobs:
         working-directory: ./terraform
         run: terraform init
 
+      - name: Terraform Validate
+        working-directory: ./terraform
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: ./terraform
+        run: |
+          PROJECT_ID="$(echo '${{ vars.GCP_PROJECT }}' | xargs)"
+          REGION="$(echo '${{ vars.GKE_REGION }}' | xargs)"
+          ZONE="$(echo '${{ vars.GCP_ZONE }}' | xargs)"
+          CLUSTER_NAME="$(echo '${{ vars.GKE_CLUSTER_NAME }}' | xargs)"
+
+          terraform plan \
+            -var="project_id=${PROJECT_ID}" \
+            -var="region=${REGION}" \
+            -var="zone=${ZONE}" \
+            -var="cluster_name=${CLUSTER_NAME}"
+
       - name: Terraform Apply
         working-directory: ./terraform
         run: |
+          PROJECT_ID="$(echo '${{ vars.GCP_PROJECT }}' | xargs)"
+          REGION="$(echo '${{ vars.GKE_REGION }}' | xargs)"
+          ZONE="$(echo '${{ vars.GCP_ZONE }}' | xargs)"
+          CLUSTER_NAME="$(echo '${{ vars.GKE_CLUSTER_NAME }}' | xargs)"
+
           terraform apply -auto-approve \
-            -var="project_id=${{ vars.GCP_PROJECT }}" \
-            -var="region=${{ vars.GKE_REGION }}" \
-            -var="zone=${{ vars.GCP_ZONE }}" \
-            -var="cluster_name=${{ vars.GKE_CLUSTER_NAME }}"
+            -var="project_id=${PROJECT_ID}" \
+            -var="region=${REGION}" \
+            -var="zone=${ZONE}" \
+            -var="cluster_name=${CLUSTER_NAME}"
